@@ -13,15 +13,15 @@
 // limitations under the License.
 
 import React from 'react';
-import { shallow } from 'enzyme';
-import { InputNumber } from 'antd';
-import debounceMock from 'lodash/debounce';
-
+import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom';
 import Header from './Header';
+import _debounce from 'lodash/debounce';
 
 jest.mock('lodash/debounce');
 
-describe('Header', () => {
+describe('Header Component', () => {
   const lookback = 4;
   const minProps = {
     lookback,
@@ -34,63 +34,61 @@ describe('Header', () => {
     service,
     services: ['foo', 'bar', 'baz'],
   };
-  let wrapper;
-  let callDebouncedFn;
-  let setLookbackSpy;
 
   beforeAll(() => {
-    debounceMock.mockImplementation(fn => {
-      setLookbackSpy = jest.fn((...args) => {
-        callDebouncedFn = () => fn(...args);
-      });
-      return setLookbackSpy;
-    });
+    jest.useFakeTimers();
+    _debounce.mockImplementation((fn) => {
+      return (...args) => {
+        fn(...args);
+      };
+    });    
   });
 
-  beforeEach(() => {
-    props.setLookback.mockReset();
-    setLookbackSpy = undefined;
-    wrapper = shallow(<Header {...props} />);
+  afterAll(() => {
+    jest.useRealTimers();
   });
 
-  describe('rendering', () => {
-    it('renders as expected with minimum props', () => {
-      wrapper = shallow(<Header {...minProps} />);
-      expect(wrapper).toMatchSnapshot();
-    });
-
-    it('renders as expected with full props', () => {
-      expect(wrapper).toMatchSnapshot();
-    });
-
-    it('renders props.lookback when state.ownInputValue is `undefined`', () => {
-      expect(wrapper.find(InputNumber).prop('value')).toBe(lookback);
-    });
-
-    it('renders state.ownInputValue when it is not `undefined` regardless of props.lookback', () => {
-      const ownInputValue = 27;
-      wrapper.setState({ ownInputValue });
-      expect(wrapper.find(InputNumber).prop('value')).toBe(ownInputValue);
-    });
+  it('renders correctly with minimum props', () => {
+    render(<Header {...minProps} />);
+    expect(screen.getByLabelText(/lookback:/i)).toBeInTheDocument();
   });
 
-  describe('setting lookback', () => {
-    it('no-ops for string values', () => {
-      wrapper.find(InputNumber).prop('onChange')('foo');
-      expect(wrapper.state('ownInputValue')).toBe(null);
-    });
+  it('renders correctly with full props', () => {
+    render(<Header {...props} />);
+    expect(screen.getByLabelText(/lookback:/i)).toBeInTheDocument();
+    expect(screen.getByText(/select a service/i)).toBeInTheDocument();
+  });
 
-    it('updates state with numeric value, then clears state and calls props.setLookback after debounce', () => {
-      const value = 42;
-      wrapper.find(InputNumber).prop('onChange')(value);
+  it('displays the lookback value from props when state.ownInputValue is undefined', () => {
+    render(<Header {...props} />);
+    expect(screen.getByLabelText(/lookback:/i)).toHaveValue(String(lookback));
+  });
 
-      expect(wrapper.state('ownInputValue')).toBe(value);
-      expect(setLookbackSpy).toHaveBeenCalledWith(42);
-      expect(props.setLookback).not.toHaveBeenCalled();
+  it('updates the lookback value when state.ownInputValue is set', () => {
+    render(<Header {...props} />);
+    const input = screen.getByLabelText(/lookback:/i);
 
-      callDebouncedFn();
-      expect(wrapper.state('ownInputValue')).toBe(null);
-      expect(props.setLookback).toHaveBeenCalledWith(42);
-    });
+    fireEvent.change(input, { target: { value: '27' } });
+    expect(input).toHaveValue(String(27));
+  });
+
+  it('calls setLookback with the correct value after debounce', () => {
+    render(<Header {...props} />);
+    const input = screen.getByLabelText(/lookback:/i);
+
+    fireEvent.change(input, { target: { value: '42' } });
+    expect(props.setLookback).not.toHaveBeenCalled();
+
+    jest.runAllTimers();
+    expect(props.setLookback).toHaveBeenCalledWith(42);
+  });
+
+  it('does not update state for string input values', () => {
+    render(<Header {...props} />);
+    const input = screen.getByLabelText(/lookback:/i);
+
+    fireEvent.change(input, { target: { value: 'foo' } });
+    expect(input).toHaveValue(null);
+    expect(props.setLookback).not.toHaveBeenCalled();
   });
 });
